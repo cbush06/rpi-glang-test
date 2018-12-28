@@ -1,0 +1,1 @@
+scp rpi-golang-test flag.bmp cbush@192.168.43.175:~/
