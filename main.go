@@ -12,13 +12,13 @@ import (
 
 	"golang.org/x/image/bmp"
 
-	"github.com/cbush06/rpi-golang-test/screen"
-	"github.com/cbush06/rpi-golang-test/texture"
+	"github.com/cbush06/rpi-golang-test/led_array/screen"
+	"github.com/cbush06/rpi-golang-test/led_array/texture"
 )
 
 var (
 	errorFrameBufferNotFound  = errors.New("Frame Buffer Device Not Found")
-	errorImageArgumentMissing = errors.New("[image] mode specifid, but no image path found")
+	errorImageArgumentMissing = errors.New("[image] mode specified, but no image path found")
 )
 
 func main() {
@@ -112,17 +112,13 @@ func getDevice(name string) (string, error) {
 	}
 
 	for _, dir := range matches {
-		fmt.Println(dir)
-		b, err := ioutil.ReadFile(filepath.Join(dir, "name"))
+		bufferName, err := ioutil.ReadFile(filepath.Join(dir, "name"))
 		if err != nil {
 			fmt.Printf("Error reading name of framebuffer [%s]: %s\n", dir, err.Error())
 			continue
 		}
 
-		fmt.Printf("Frame Buffer Name of [%s]: %s\n", dir, b)
-
-		fbName := strings.TrimSpace(string(b))
-		if name == fbName {
+		if name == strings.TrimSpace(string(bufferName)) {
 			return filepath.Join("/dev", filepath.Base(dir)), nil
 		}
 	}

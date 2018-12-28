@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"os"
 
-	"github.com/cbush06/rpi-golang-test/rgb565"
-	"github.com/cbush06/rpi-golang-test/texture"
+	"github.com/cbush06/rpi-golang-test/led_array/rgb565"
+	"github.com/cbush06/rpi-golang-test/led_array/texture"
 )
 
 // Screen represents the currently rendered screen on a device (e.g. the Pi Sense-Hat)

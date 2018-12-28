@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/cbush06/rpi-golang-test/rgb565"
+	"github.com/cbush06/rpi-golang-test/led_array/rgb565"
 )
 
 var errorsIncompatibleSize = errors.New("The size of the provided image was not at least 8x8")
