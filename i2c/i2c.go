@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -27,38 +28,42 @@ const (
 )
 
 var (
-	errorI2CDeviceNotFound    = errors.New("I2C device not found")
-	errorI2CDeviceFileNotOpen = errors.New("I2C device file not open")
-	errorI2CReadFailed        = errors.New("I2C read failed")
-	errorI2CSlaveSelectFailed = errors.New("I2C slave selection via IOCTL failed")
+	errorI2CDeviceNotFound       = errors.New("I2C device not found")
+	errorI2CDeviceFileNotOpen    = errors.New("I2C device file not open")
+	errorI2CReadFailed           = errors.New("I2C read failed")
+	errorI2CSlaveSelectFailed    = errors.New("I2C slave selection via IOCTL failed")
+	errorI2CRegisterSelectFailed = errors.New("I2C register selection failed")
 )
 
 // I2C represents an I2C bus on a linux device
 type I2C struct {
-	deviceName          string
-	busID               uint8
-	currentSlaveAddress uint8
-	accelSlaveAddress   uint8
-	magSlaveAddress     uint8
-	fileHandle          *os.File
+	DeviceName            string
+	BusID                 uint8
+	CurrentSlaveAddress   uint8
+	CurrentRegiserAddress uint8
+	fileHandle            *os.File
 }
 
-// NewDefault returns a new I2C with default settings
-func NewDefault() I2C {
-	return I2C{
-		deviceName:        "bcm2835 I2C adapter",
-		busID:             1,
-		accelSlaveAddress: 0,
-		magSlaveAddress:   0,
-		fileHandle:        nil,
+// NewI2c returns a new I2C with default settings
+func NewI2c() *I2C {
+	return &I2C{
+		DeviceName:            "bcm2835 I2C adapter",
+		BusID:                 1,
+		CurrentSlaveAddress:   255,
+		CurrentRegiserAddress: 255,
+		fileHandle:            nil,
 	}
 }
 
-// Init attempts to open the system /dev/i2c-* file that coresponds to this I2C device.
+// Init attempts to open the system /dev/i2c-* file that corresponds to this I2C device.
 func (i *I2C) Init() error {
+	if i.fileHandle != nil {
+		return nil
+	}
+
 	i2cDevice, err := i.getDevice()
 	if err != nil {
-		fmt.Printf("Could not locate I2C device file for name [%s]\n", i.deviceName)
+		fmt.Printf("Could not locate I2C device file for name [%s]\n", i.DeviceName)
 		return err
 	}
 
@@ -71,32 +76,55 @@ func (i *I2C) Init() error {
 	return nil
 }
 
-// Normal read with register select (for those I2C devices that offer more than one register)
-func (i *I2C) readWithRegisterSelect(slaveAddr uint8, register uint8, readLength uint8) ([]byte, error) {
-	// write empty message with register
-	return i.readWithoutRegisterSelect(slaveAddr, readLength)
+// Close releases the /dev/i2c-* file handle assosciated with this device.
+func (i *I2C) Close() error {
+	if i.fileHandle == nil {
+		return nil
+	}
+
+	i.CurrentSlaveAddress = 255
+	i.CurrentRegiserAddress = 255
+	return i.fileHandle.Close()
+}
+
+// ReadRegister performs a normal read with register select (for those I2C devices that offer more than one register)
+func (i *I2C) ReadRegister(slaveAddr uint8, registerAddr uint8, readLength uint8) ([]byte, error) {
+	err := i.selectSlave(slaveAddr)
+	if err != nil {
+		fmt.Printf("Attempt to select slave [%Xh] failed: %s\n", slaveAddr, err.Error())
+		return nil, errorI2CReadFailed
+	}
+
+	err = i.selectRegister(registerAddr)
+	if err != nil {
+		fmt.Printf("Attempt to select register [%Xh] failed: %s\n", registerAddr, err.Error())
+		return nil, errorI2CReadFailed
+	}
+
+	return i.Read(slaveAddr, readLength)
 }
 
 // Read without register select
-func (i *I2C) readWithoutRegisterSelect(slaveAddr uint8, readLength uint8) ([]byte, error) {
+func (i *I2C) Read(slaveAddr uint8, readLength uint8) ([]byte, error) {
 	if i.fileHandle == nil {
 		return nil, errorI2CDeviceFileNotOpen
 	}
 
 	err := i.selectSlave(slaveAddr)
 	if err != nil {
-		fmt.Printf("Attempt to select slave [%Xh] failed: %s", slaveAddr, err.Error())
+		fmt.Printf("Attempt to select slave [%Xh] failed: %s\n", slaveAddr, err.Error())
 		return nil, errorI2CReadFailed
 	}
 
 	var data = make([]byte, readLength) // len = 0, cap = readLength
 
 	// Try at least 5 times to read the requested data before giving up
-	var total, tries = uint8(0), uint8(0)
+	var total uint8
+	var tries uint8
 	for total < readLength && tries < 5 {
 		bytesRead, err := i.fileHandle.Read(data[total:]) // reposition the slice so data is appended
 		if err != nil {
-			fmt.Printf("Error encountered reading value from slave [%Xh], failed: %s", slaveAddr, err.Error())
+			fmt.Printf("Error encountered reading value from slave [%Xh], failed: %s\n", slaveAddr, err.Error())
 			return []byte{}, err
 		}
 		total += uint8(bytesRead)
@@ -105,7 +133,7 @@ func (i *I2C) readWithoutRegisterSelect(slaveAddr uint8, readLength uint8) ([]by
 	}
 
 	if total != readLength {
-		fmt.Printf("Read from slave [%Xh], register [%Xh] failed")
+		fmt.Printf("Read from slave [%Xh], register [%Xh] failed\n", slaveAddr, i.CurrentRegiserAddress)
 		return []byte{}, errorI2CReadFailed
 	}
 
@@ -122,11 +150,13 @@ func (i *I2C) getDevice() (string, error) {
 	for _, dir := range matches {
 		deviceName, err := ioutil.ReadFile(filepath.Join(dir, "name"))
 		if err != nil {
-			fmt.Printf("Error reading name of I2C device [%s]: %s", dir, err.Error())
+			fmt.Printf("Error reading name of I2C device [%s]: %s\n", dir, err.Error())
 			continue
 		}
 
-		if i.deviceName == strings.TrimSpace(string(deviceName)) {
+		if i.DeviceName == strings.TrimSpace(string(deviceName)) {
+			busID, _ := strconv.Atoi(dir[len(dir)-1:])
+			i.BusID = uint8(busID)
 			return filepath.Join("/dev", filepath.Base(dir)), nil
 		}
 	}
@@ -135,18 +165,42 @@ func (i *I2C) getDevice() (string, error) {
 }
 
 func (i *I2C) selectSlave(slaveAddr uint8) error {
-	if i.currentSlaveAddress == slaveAddr {
+	if i.CurrentSlaveAddress == slaveAddr {
 		return nil
 	}
 	if i.fileHandle == nil {
 		return errorI2CDeviceFileNotOpen
 	}
 
-	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, ioctlI2cSlave, uintptr(slaveAddr), 0)
+	_, _, err := syscall.Syscall(syscall.SYS_IOCTL, i.fileHandle.Fd(), uintptr(ioctlI2cSlave), uintptr(slaveAddr))
 	if err != 0 {
-		fmt.Printf("Attempt to select I2C slave [%Xh] via IOCTL failed: %s", slaveAddr, err.Error())
+		fmt.Printf("Attempt to select I2C slave [%Xh] via IOCTL failed: %s\n", slaveAddr, err.Error())
 		return errorI2CSlaveSelectFailed
 	}
 
+	i.CurrentSlaveAddress = slaveAddr
+	return nil
+}
+
+func (i *I2C) selectRegister(registerAddr uint8) error {
+	if registerAddr == i.CurrentRegiserAddress {
+		return nil
+	}
+	if i.fileHandle == nil {
+		return errorI2CDeviceFileNotOpen
+	}
+
+	if i.CurrentRegiserAddress != registerAddr {
+		len, err := i.fileHandle.Write([]byte{registerAddr})
+		if err != nil {
+			fmt.Printf("Error encountered while writing register address [%Xh]: %s\n", registerAddr, err.Error())
+			return errorI2CRegisterSelectFailed
+		}
+		if len != 1 {
+			fmt.Printf("Attempted to write register address [%Xh], but %d byte(s) written instead of 1\n", registerAddr, len)
+			return errorI2CRegisterSelectFailed
+		}
+	}
+	i.CurrentRegiserAddress = registerAddr
 	return nil
 }

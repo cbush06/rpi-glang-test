@@ -1,4 +1,4 @@
-package i2c
+package lsm9ds1
 
 const (
 	_ = iota

@@ -1,7 +1,8 @@
-package i2c
+package lsm9ds1
 
 const (
 	_ = iota
+	_
 	_
 	_
 	AG_ACT_THS
@@ -14,6 +15,7 @@ const (
 	AG_REFERENCE_G
 	AG_INT1_CTRL
 	AG_INT2_CTRL
+	_
 	AG_WHO_AM_I
 	AG_CTRL1
 	AG_CTRL2
@@ -36,6 +38,7 @@ const (
 	AG_CTRL8
 	AG_CTRL9
 	AG_CTRL10
+	_
 	AG_INT_GEN_SRC_XL
 	AG_STATUS2
 	AG_OUT_X_L_XL
