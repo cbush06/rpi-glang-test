@@ -36,8 +36,9 @@ func main() {
 		}
 		led.FromImage(args[1])
 	case "imu":
-		i2cConn := i2c.NewI2c()
-		imu.AutoDiscover(i2cConn)
+		i2cConn := i2c.NewI2c(&imu.ImuSettings{})
+		i2cConn.Init()
+		i2cConn.AutoDiscoverImu()
 	}
 
 	// wait for Ctrl-C, then clear the screen

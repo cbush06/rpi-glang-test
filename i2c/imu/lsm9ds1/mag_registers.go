@@ -5,6 +5,7 @@ const (
 	_
 	_
 	_
+	_
 	MAG_OFFSET_X_L
 	MAG_OFFSET_X_H
 	MAG_OFFSET_Y_L
